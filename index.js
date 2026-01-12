@@ -3,25 +3,19 @@ const path = require('path');
 const app = express();
 const port = 3000;
 
-// Import Model & Library
 const db = require('./models');
 const { User, Komik } = require('./models');
-const { Op } = require('sequelize'); // WAJIB ADA: Buat Search
+const { Op } = require('sequelize'); // Op Search bisa dihapus kalau gak dipake, tapi biarin aja gpp
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
-// Import Middleware
 const authenticateToken = require('./middleware/auth');
 const apiKeyAuth = require('./middleware/apiKeyAuth');
 
-// =========================================================
 // CONFIGURATION
-// =========================================================
-
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -29,30 +23,29 @@ app.use(express.urlencoded({ extended: true }));
 // ROUTE FRONTEND (WEBSITE UI)
 // =========================================================
 
-// 1. Tampilkan Halaman Login
 app.get('/login', (req, res) => {
     res.render('login');
 });
 
-// 2. Proses Login Web
+// LOGIN WEB
 app.post('/login-web', async (req, res) => {
     try {
         const { email, password } = req.body;
         
-        // Cari User + Komik
+        // Cari User + Komik (Diurutkan dari yang TERBARU)
         const user = await User.findOne({ 
             where: { email },
-            include: [{ model: db.Komik, as: 'list_komik' }] 
+            include: [{ 
+                model: db.Komik, 
+                as: 'list_komik' 
+            }],
+            order: [
+                [{ model: db.Komik, as: 'list_komik' }, 'createdAt', 'DESC'] // Urutkan komik
+            ]
         });
 
         if (!user || !await bcrypt.compare(password, user.password)) {
-            return res.send(`
-                <body style="background-color:#111827; color:white; font-family:sans-serif; text-align:center; padding-top:50px;">
-                    <h1 style="color:#ef4444;">Login Gagal! ❌</h1>
-                    <p>Email atau Password salah.</p>
-                    <a href="/login" style="color:#60a5fa;">Coba Lagi</a>
-                </body>
-            `);
+            return res.send(`<h1 style="color:red;text-align:center;margin-top:50px;">Login Gagal! ❌</h1><center><a href="/login">Coba Lagi</a></center>`);
         }
         res.render('dashboard', { user: user });
     } catch (error) {
@@ -60,24 +53,24 @@ app.post('/login-web', async (req, res) => {
     }
 });
 
-// 3. LOGIC REGENERATE API KEY
+// REGENERATE KEY
 app.post('/regenerate-key', async (req, res) => {
     try {
         const { email } = req.body;
         const newApiKey = crypto.randomBytes(20).toString('hex');
         await User.update({ api_key: newApiKey }, { where: { email: email } });
 
+        // Reload data
         const updatedUser = await User.findOne({ 
             where: { email },
-            include: [{ model: db.Komik, as: 'list_komik' }]
+            include: [{ model: db.Komik, as: 'list_komik' }],
+            order: [[{ model: db.Komik, as: 'list_komik' }, 'createdAt', 'DESC']]
         });
         res.render('dashboard', { user: updatedUser });
-    } catch (error) {
-        res.status(500).send("Gagal: " + error.message);
-    }
+    } catch (error) { res.status(500).send("Gagal: " + error.message); }
 });
 
-// 4. LOGIC TAMBAH KOMIK WEB
+// TAMBAH KOMIK WEB
 app.post('/tambah-komik-web', async (req, res) => {
     try {
         const { email, judul, penulis, deskripsi } = req.body;
@@ -85,53 +78,27 @@ app.post('/tambah-komik-web', async (req, res) => {
 
         await db.Komik.create({ judul, penulis, deskripsi, userId: user.id });
 
+        // Reload data
         const updatedUser = await User.findOne({ 
             where: { email },
-            include: [{ model: db.Komik, as: 'list_komik' }]
+            include: [{ model: db.Komik, as: 'list_komik' }],
+            order: [[{ model: db.Komik, as: 'list_komik' }, 'createdAt', 'DESC']]
         });
         res.render('dashboard', { user: updatedUser });
-    } catch (error) {
-        res.status(500).send("Gagal: " + error.message);
-    }
+    } catch (error) { res.status(500).send("Gagal: " + error.message); }
 });
 
-// 5. LOGIC HAPUS KOMIK WEB
+// HAPUS KOMIK WEB
 app.post('/delete-komik/:id', async (req, res) => {
     try {
         const { id } = req.params;
         await db.Komik.destroy({ where: { id: id } });
         res.redirect('back');
-    } catch (error) {
-        res.status(500).send("Gagal hapus: " + error.message);
-    }
-});
-
-// 6. LOGIC CARI KOMIK WEB (FITUR BARU)
-app.post('/cari-komik-web', async (req, res) => {
-    try {
-        const { email, keyword } = req.body;
-        const user = await User.findOne({ where: { email } });
-
-        // Cari komik user yang judulnya MIRIP keyword
-        const hasilPencarian = await db.Komik.findAll({
-            where: {
-                userId: user.id,
-                judul: { [Op.like]: `%${keyword}%` }
-            }
-        });
-
-        // Update data user sementara buat ditampilin
-        user.dataValues.list_komik = hasilPencarian;
-        user.dataValues.isSearch = true; // Tandai lagi mode search
-
-        res.render('dashboard', { user: user });
-    } catch (error) {
-        res.status(500).send("Error search: " + error.message);
-    }
+    } catch (error) { res.status(500).send("Gagal hapus: " + error.message); }
 });
 
 // =========================================================
-// API ROUTES (THUNDER CLIENT)
+// API ROUTES
 // =========================================================
 
 app.post('/register', async (req, res) => { 
@@ -180,6 +147,8 @@ app.get('/api/v1/public/komik', apiKeyAuth, async (req, res) => {
     try {
         const { search } = req.query;
         let conditions = { userId: req.userOwner.id };
+        
+        // Search API tetep pake Backend biar aman
         if (search) conditions.judul = { [Op.like]: `%${search}%` };
 
         const dataKomik = await db.Komik.findAll({ where: conditions, attributes: ['judul', 'penulis', 'deskripsi', 'createdAt'] });

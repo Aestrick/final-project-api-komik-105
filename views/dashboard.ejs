@@ -96,23 +96,23 @@
                         <div class="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center text-white font-bold">2</div>
                         <h3 class="text-xl font-bold text-white">Database API</h3>
                     </div>
+                    <span class="text-xs text-gray-400 bg-gray-900 px-2 py-1 rounded border border-gray-700">
+                        Total: <%= user.list_komik ? user.list_komik.length : 0 %> Data
+                    </span>
                 </div>
 
-                <form action="/cari-komik-web" method="POST" class="mb-4 relative">
-                    <input type="hidden" name="email" value="<%= user.email %>">
-                    <input type="text" name="keyword" placeholder="🔍 Cari judul komik..." 
-                        class="w-full bg-gray-900 border border-gray-600 rounded-lg pl-4 pr-12 py-2 text-sm text-white focus:border-purple-500 outline-none transition">
-                    <button type="submit" class="absolute right-2 top-1.5 text-gray-400 hover:text-white font-bold text-xs bg-gray-800 px-2 py-1 rounded">
-                        CARI
-                    </button>
-                </form>
+                <div class="mb-4 relative">
+                    <input type="text" id="liveSearchInput" onkeyup="filterKomik()" placeholder="⚡ Ketik buat nyari (Live)..." 
+                        class="w-full bg-gray-900 border border-gray-600 rounded-lg pl-4 pr-10 py-2 text-sm text-white focus:border-purple-500 outline-none transition">
+                    <span class="absolute right-3 top-2 text-gray-500">🔍</span>
+                </div>
                 
-                <div class="overflow-y-auto flex-1 pr-2 space-y-3 custom-scrollbar">
+                <div class="overflow-y-auto flex-1 pr-2 space-y-3 custom-scrollbar" id="komikListContainer">
                     <% if(user.list_komik && user.list_komik.length > 0) { %>
                         <% user.list_komik.forEach(komik => { %>
-                            <div class="bg-gray-900 p-4 rounded-lg border-l-4 border-purple-500 hover:bg-gray-900/80 transition group flex justify-between items-center">
+                            <div class="komik-item bg-gray-900 p-4 rounded-lg border-l-4 border-purple-500 hover:bg-gray-900/80 transition group flex justify-between items-center">
                                 <div>
-                                    <h4 class="font-bold text-white text-lg"><%= komik.judul %></h4>
+                                    <h4 class="judul-komik font-bold text-white text-lg"><%= komik.judul %></h4>
                                     <p class="text-xs text-gray-400">Penulis: <span class="text-gray-300"><%= komik.penulis %></span></p>
                                 </div>
                                 <form action="/delete-komik/<%= komik.id %>" method="POST" onsubmit="return confirm('Hapus?')">
@@ -122,12 +122,13 @@
                         <% }) %>
                     <% } else { %>
                         <div class="h-full flex flex-col items-center justify-center text-gray-500 opacity-50">
-                            <p class="text-center">Data tidak ditemukan.</p>
-                            <% if(user.isSearch) { %>
-                                <a href="javascript:history.back()" class="text-blue-400 text-sm mt-2 underline cursor-pointer">⬅️ Reset Pencarian</a>
-                            <% } %>
+                            <p class="text-center">Database masih kosong.<br>Input data di samping ya!</p>
                         </div>
                     <% } %>
+                    
+                    <div id="noResultMsg" class="hidden text-center text-gray-500 mt-10">
+                        <p>Yah, komik yang dicari gak ada bro 😢</p>
+                    </div>
                 </div>
             </div>
 
@@ -139,6 +140,38 @@
             const key = document.getElementById('apiKeyDisplay').innerText;
             navigator.clipboard.writeText(key.trim());
             alert('API Key berhasil disalin!');
+        }
+
+        // --- SCRIPT LIVE SEARCH ---
+        function filterKomik() {
+            // 1. Ambil apa yang diketik user & jadiin HURUF KECIL semua (Biar gak case sensitive)
+            const input = document.getElementById('liveSearchInput').value.toLowerCase();
+            
+            // 2. Ambil semua kartu komik
+            const cards = document.getElementsByClassName('komik-item');
+            let foundCount = 0;
+
+            // 3. Loop cek satu-satu
+            for (let i = 0; i < cards.length; i++) {
+                // Ambil judul dari kartu
+                const title = cards[i].getElementsByClassName('judul-komik')[0].innerText.toLowerCase();
+                
+                // Cek: Apakah judul mengandung huruf yang diketik?
+                if (title.indexOf(input) > -1) {
+                    cards[i].style.display = ""; // TAMPILKAN
+                    foundCount++;
+                } else {
+                    cards[i].style.display = "none"; // SEMBUNYIKAN
+                }
+            }
+
+            // 4. Kalau gak ada satupun yang cocok, munculin pesan sedih
+            const noMsg = document.getElementById('noResultMsg');
+            if (foundCount === 0) {
+                noMsg.style.display = "block";
+            } else {
+                noMsg.style.display = "none";
+            }
         }
     </script>
 </body>

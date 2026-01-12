@@ -3,19 +3,25 @@ const path = require('path');
 const app = express();
 const port = 3000;
 
+// Import Model & Library
 const db = require('./models');
 const { User, Komik } = require('./models');
-const { Op } = require('sequelize'); // Op Search bisa dihapus kalau gak dipake, tapi biarin aja gpp
+const { Op } = require('sequelize'); // Penting buat Search Backend
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
+// Import Middleware
 const authenticateToken = require('./middleware/auth');
 const apiKeyAuth = require('./middleware/apiKeyAuth');
 
+// =========================================================
 // CONFIGURATION
+// =========================================================
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -23,11 +29,17 @@ app.use(express.urlencoded({ extended: true }));
 // ROUTE FRONTEND (WEBSITE UI)
 // =========================================================
 
+// 0. LANDING PAGE (Halaman Utama - BARU!)
+app.get('/', (req, res) => {
+    res.render('home'); // Pastikan file views/home.ejs sudah dibuat
+});
+
+// 1. Tampilkan Halaman Login
 app.get('/login', (req, res) => {
     res.render('login');
 });
 
-// LOGIN WEB
+// 2. Proses Login Web
 app.post('/login-web', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -40,12 +52,18 @@ app.post('/login-web', async (req, res) => {
                 as: 'list_komik' 
             }],
             order: [
-                [{ model: db.Komik, as: 'list_komik' }, 'createdAt', 'DESC'] // Urutkan komik
+                [{ model: db.Komik, as: 'list_komik' }, 'createdAt', 'DESC']
             ]
         });
 
         if (!user || !await bcrypt.compare(password, user.password)) {
-            return res.send(`<h1 style="color:red;text-align:center;margin-top:50px;">Login Gagal! ❌</h1><center><a href="/login">Coba Lagi</a></center>`);
+            return res.send(`
+                <body style="background-color:#111827; color:white; font-family:sans-serif; text-align:center; padding-top:50px;">
+                    <h1 style="color:#ef4444;">Login Gagal! ❌</h1>
+                    <p>Email atau Password salah.</p>
+                    <a href="/login" style="color:#60a5fa;">Coba Lagi</a>
+                </body>
+            `);
         }
         res.render('dashboard', { user: user });
     } catch (error) {
@@ -53,7 +71,7 @@ app.post('/login-web', async (req, res) => {
     }
 });
 
-// REGENERATE KEY
+// 3. LOGIC REGENERATE API KEY
 app.post('/regenerate-key', async (req, res) => {
     try {
         const { email } = req.body;
@@ -70,7 +88,7 @@ app.post('/regenerate-key', async (req, res) => {
     } catch (error) { res.status(500).send("Gagal: " + error.message); }
 });
 
-// TAMBAH KOMIK WEB
+// 4. LOGIC TAMBAH KOMIK WEB
 app.post('/tambah-komik-web', async (req, res) => {
     try {
         const { email, judul, penulis, deskripsi } = req.body;
@@ -88,7 +106,7 @@ app.post('/tambah-komik-web', async (req, res) => {
     } catch (error) { res.status(500).send("Gagal: " + error.message); }
 });
 
-// HAPUS KOMIK WEB
+// 5. LOGIC HAPUS KOMIK WEB
 app.post('/delete-komik/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -98,7 +116,7 @@ app.post('/delete-komik/:id', async (req, res) => {
 });
 
 // =========================================================
-// API ROUTES
+// API ROUTES (BACKEND ONLY)
 // =========================================================
 
 app.post('/register', async (req, res) => { 
@@ -148,7 +166,7 @@ app.get('/api/v1/public/komik', apiKeyAuth, async (req, res) => {
         const { search } = req.query;
         let conditions = { userId: req.userOwner.id };
         
-        // Search API tetep pake Backend biar aman
+        // Fitur Search Backend (Untuk yang akses lewat API/Thunder Client)
         if (search) conditions.judul = { [Op.like]: `%${search}%` };
 
         const dataKomik = await db.Komik.findAll({ where: conditions, attributes: ['judul', 'penulis', 'deskripsi', 'createdAt'] });
@@ -156,6 +174,9 @@ app.get('/api/v1/public/komik', apiKeyAuth, async (req, res) => {
     } catch (error) { res.status(500).json({ message: error.message }); }
 });
 
+// =========================================================
+// SERVER LISTEN
+// =========================================================
 app.listen(port, async () => {
     console.log(`Server jalan di http://localhost:${port}`);
     try { await db.sequelize.authenticate(); console.log('Database Konek! Relasi Siap!'); } catch (err) { console.error(err); }

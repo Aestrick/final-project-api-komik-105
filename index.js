@@ -5,8 +5,8 @@ const port = 3000;
 
 // Import Model & Library
 const db = require('./models');
-const { User, Komik } = require('./models'); // Load Model User & Komik
-const { Op } = require('sequelize'); // <--- PENTING: Buat fitur Search (LIKE query)
+const { User, Komik } = require('./models');
+const { Op } = require('sequelize'); // Buat Search
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -34,12 +34,12 @@ app.get('/login', (req, res) => {
     res.render('login');
 });
 
-// 2. Proses Login Web (Updated: Bawa data komik juga)
+// 2. Proses Login Web
 app.post('/login-web', async (req, res) => {
     try {
         const { email, password } = req.body;
         
-        // Cari User BESERTA Komiknya (Include)
+        // Cari User + Komiknya
         const user = await User.findOne({ 
             where: { email },
             include: [{ model: db.Komik, as: 'list_komik' }] 
@@ -68,7 +68,6 @@ app.post('/regenerate-key', async (req, res) => {
 
         await User.update({ api_key: newApiKey }, { where: { email: email } });
 
-        // Fetch ulang user + komik biar dashboard gak kosong
         const updatedUser = await User.findOne({ 
             where: { email },
             include: [{ model: db.Komik, as: 'list_komik' }]
@@ -76,7 +75,7 @@ app.post('/regenerate-key', async (req, res) => {
 
         res.render('dashboard', { user: updatedUser });
     } catch (error) {
-        res.status(500).send("Gagal generate key baru: " + error.message);
+        res.status(500).send("Gagal generate key: " + error.message);
     }
 });
 
@@ -84,28 +83,38 @@ app.post('/regenerate-key', async (req, res) => {
 app.post('/tambah-komik-web', async (req, res) => {
     try {
         const { email, judul, penulis, deskripsi } = req.body;
-
-        // Cari user buat dapet ID
         const user = await User.findOne({ where: { email } });
 
-        // Simpan Data Baru
         await db.Komik.create({
-            judul,
-            penulis,
-            deskripsi,
-            userId: user.id
+            judul, penulis, deskripsi, userId: user.id
         });
 
-        // Refresh Data User + Komik
         const updatedUser = await User.findOne({ 
             where: { email },
             include: [{ model: db.Komik, as: 'list_komik' }]
         });
 
         res.render('dashboard', { user: updatedUser });
-
     } catch (error) {
         res.status(500).send("Gagal nambah komik: " + error.message);
+    }
+});
+
+// 5. LOGIC HAPUS KOMIK (DELETE) - FITUR BARU!
+app.post('/delete-komik/:id', async (req, res) => {
+    try {
+        const { id } = req.params; // Ambil ID dari URL
+        
+        // HAPUS data berdasarkan ID
+        await db.Komik.destroy({
+            where: { id: id }
+        });
+
+        // Balikin ke halaman sebelumnya (Refresh)
+        res.redirect('back');
+
+    } catch (error) {
+        res.status(500).send("Gagal menghapus: " + error.message);
     }
 });
 
@@ -152,10 +161,10 @@ app.post('/login', async (req, res) => {
 app.post('/komik', authenticateToken, async (req, res) => {
     try {
         const { judul, penulis, deskripsi } = req.body;
-        const komikBaru = await db.Komik.create({ 
+        await db.Komik.create({ 
             judul, penulis, deskripsi, userId: req.user.id 
         });
-        res.status(201).json({ success: true, data: komikBaru });
+        res.status(201).json({ success: true, message: "Berhasil" });
     } catch (error) { res.status(500).json({ message: error.message }); }
 });
 
@@ -178,25 +187,18 @@ app.get('/komik-with-owner', authenticateToken, async (req, res) => {
 });
 
 // =========================================================
-// PUBLIC API (Perlu API KEY) - VERSI BISA SEARCH & FILTER
+// PUBLIC API (Search & Filter)
 // =========================================================
 
 app.get('/api/v1/public/komik', apiKeyAuth, async (req, res) => {
     try {
-        // 1. Tangkap kata kunci pencarian
         const { search } = req.query;
+        let conditions = { userId: req.userOwner.id };
 
-        // 2. Siapkan kondisi: Harus milik user API Key tersebut
-        let conditions = { 
-            userId: req.userOwner.id 
-        };
-
-        // 3. Kalau ada search, tambahkan filter JUDUL
         if (search) {
             conditions.judul = { [Op.like]: `%${search}%` }; 
         }
 
-        // 4. Query Database
         const dataKomik = await db.Komik.findAll({
             where: conditions,
             attributes: ['judul', 'penulis', 'deskripsi', 'createdAt']
@@ -204,11 +206,8 @@ app.get('/api/v1/public/komik', apiKeyAuth, async (req, res) => {
 
         res.status(200).json({
             status: "Success",
-            message: search 
-                ? `Hasil pencarian untuk: '${search}'` 
-                : `Halo ${req.userOwner.username}, ini koleksi komik kamu!`,
+            message: search ? `Hasil cari: '${search}'` : `Halo ${req.userOwner.username}, ini koleksimu!`,
             total_data: dataKomik.length,
-            request_at: new Date(),
             data: dataKomik
         });
     } catch (error) {

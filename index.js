@@ -5,7 +5,8 @@ const port = 3000;
 
 // Import Model & Library
 const db = require('./models');
-const { User } = require('./models');
+const { User, Komik } = require('./models'); // Load Model User & Komik
+const { Op } = require('sequelize'); // <--- PENTING: Buat fitur Search (LIKE query)
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -79,7 +80,7 @@ app.post('/regenerate-key', async (req, res) => {
     }
 });
 
-// 4. LOGIC TAMBAH KOMIK DARI WEB (NEW FEATURE!)
+// 4. LOGIC TAMBAH KOMIK DARI WEB
 app.post('/tambah-komik-web', async (req, res) => {
     try {
         const { email, judul, penulis, deskripsi } = req.body;
@@ -177,24 +178,38 @@ app.get('/komik-with-owner', authenticateToken, async (req, res) => {
 });
 
 // =========================================================
-// PUBLIC API (Perlu API KEY) - REAL DATA VERSION
+// PUBLIC API (Perlu API KEY) - VERSI BISA SEARCH & FILTER
 // =========================================================
 
 app.get('/api/v1/public/komik', apiKeyAuth, async (req, res) => {
     try {
-        // AMBIL DATA DARI DATABASE (BUKAN DUMMY LAGI)
-        // Cari komik yang userId-nya sama dengan pemilik API Key
+        // 1. Tangkap kata kunci pencarian
+        const { search } = req.query;
+
+        // 2. Siapkan kondisi: Harus milik user API Key tersebut
+        let conditions = { 
+            userId: req.userOwner.id 
+        };
+
+        // 3. Kalau ada search, tambahkan filter JUDUL
+        if (search) {
+            conditions.judul = { [Op.like]: `%${search}%` }; 
+        }
+
+        // 4. Query Database
         const dataKomik = await db.Komik.findAll({
-            where: { userId: req.userOwner.id },
+            where: conditions,
             attributes: ['judul', 'penulis', 'deskripsi', 'createdAt']
         });
 
         res.status(200).json({
             status: "Success",
-            message: `Halo ${req.userOwner.username}, ini koleksi komik kamu!`,
+            message: search 
+                ? `Hasil pencarian untuk: '${search}'` 
+                : `Halo ${req.userOwner.username}, ini koleksi komik kamu!`,
             total_data: dataKomik.length,
             request_at: new Date(),
-            data: dataKomik // <--- INI DATA ASLI DARI INPUTAN WEB
+            data: dataKomik
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
